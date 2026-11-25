@@ -178,5 +178,18 @@ The runner changed with it: the send is now raced against cancellation, because 
 
 Rejected again: any scheme that disguises the traffic — spreading sends across webhooks, jittering to look human, or splitting a run across channels. The budgets match Discord's published allowances; the goal is to stay inside them by construction, not to hide from them.
 
+---
+
+## 2026-11-25 — Replies are ephemeral; the invocation line is not ours to hide
+
+`/spam` and `/cancel` now reply with `CreateReply::ephemeral(true)`, and a custom `on_error` handler does the same for every command error. The reason is attribution: the count, the clamped interval, and which validation failed are the invoker's business, and broadcasting them makes the command feel like a public accusation.
+
+What this does **not** achieve: Discord renders "user used /spam" in the channel itself. That line is client UI for slash-command invocations, produced by Discord rather than by the bot, and an application cannot suppress it. Any claim that the command is invisible would be false, so `docs/commands.md` states the limit explicitly.
+
+A DM invocation would avoid the channel line, but it is not available here: the command is `guild_only` and gated on `Manage Messages`, neither of which can be evaluated in a DM. Making it DM-capable would mean dropping the permission gate, which is a worse trade than the visual attribution.
+
+The channel messages remain public. Making them ephemeral would remove the feature: an ephemeral message is a reply to the invoker, not something the channel can read.
+
+
 
 
