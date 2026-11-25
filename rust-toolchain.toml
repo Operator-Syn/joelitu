@@ -1,0 +1,6 @@
+[toolchain]
+# Pinned to an exact minor so the container build reproduces this machine's
+# build or fails loudly, rather than silently resolving a newer compiler.
+channel = "1.85.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
