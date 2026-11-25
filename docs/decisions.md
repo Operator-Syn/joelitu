@@ -190,6 +190,19 @@ A DM invocation would avoid the channel line, but it is not available here: the 
 
 The channel messages remain public. Making them ephemeral would remove the feature: an ephemeral message is a reply to the invoker, not something the channel can read.
 
+---
+
+## 2026-11-25 — The mention cooldown is removed
+
+`MENTION_COOLDOWN` is gone, along with its registry state, its error variant and its test. Yashindo's instruction: it felt restrictive with no freedom, and the constraint was not earning its cost.
+
+Recorded honestly, because the entry that introduced it claimed otherwise: it never prevented the behaviour it was named for. A single run at `count:99` pings the target ninety-nine times regardless, since the cooldown is checked once per run. All it prevented was a second run inside the window — which meant the command was blocked for minutes after any ordinary use, while the ninety-nine-ping case remained available.
+
+What actually bounds a run is `MAX_COUNT`, the pacer's channel budget, the `Manage Messages` gate, and `/cancel`. Those are unchanged. The gap this leaves, stated plainly: several people can now ping the same target back-to-back, and the only remedy is cancelling the runs.
+
+Timing state for mentions is gone with it, so the registry is back to one map and one counter.
+
+
 
 
 
