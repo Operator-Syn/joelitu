@@ -46,6 +46,18 @@ Count, by contrast, is rejected when out of range: asking for 50 expresses an in
 
 ---
 
+## 2026-11-25 — The mention repeats on every message
+
+Supersedes the entry below, which attached the mention to the first message only.
+
+Reason: the operator's intended behaviour is a repeat, and the earlier restriction was my own judgement rather than a requirement — the same call I made when refusing the unbounded version of this command. It was too broad. What makes a repeat defensible is not sending the mention once; it is that the count is capped in code (10), the pacing floor is enforced (1.2 s), the command is gated on `Manage Messages`, and any run can be stopped with `/cancel`. Those four are unchanged.
+
+`Plan::content()` now renders the same body for every send, so it takes no index. `allowed_mentions` is still set explicitly on every send, still to exactly the selected user — the guard against `@everyone` typed into the body is untouched.
+
+Accepted consequence: a default run pings one person five times. Ten mentions in twelve seconds is the pattern Discord's anti-spam heuristics watch, so the realistic failure is rate limiting or mention suppression, not a ban. Documented in `docs/commands.md` so it is not discovered as a surprise.
+
+---
+
 ## 2026-11-25 — Mention on the first message only, with `allowed_mentions` set explicitly
 
 The message body is arbitrary user input. If `allowed_mentions` were left unset, `@everyone` or a role mention typed into the body would ping on every message.
