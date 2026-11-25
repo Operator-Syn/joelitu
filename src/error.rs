@@ -97,15 +97,6 @@ pub enum CommandError {
         active: usize,
     },
 
-    /// The same user was mentioned in this channel recently.
-    #[error(
-        "that user was mentioned here in the last few minutes; try again in about {remaining_secs}s"
-    )]
-    MentionCooldown {
-        /// Seconds left before the mention is allowed again, rounded up.
-        remaining_secs: u64,
-    },
-
     /// A Discord call made by the command handler failed.
     #[error(transparent)]
     Discord(#[from] serenity::Error),
