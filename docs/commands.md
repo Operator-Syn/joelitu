@@ -26,10 +26,20 @@ Both commands are guild-only and require **Manage Messages**.
 
 **Acknowledgement**
 
+Sent **ephemerally** — only the invoker sees it.
+
 ```
 posting 5 message(s)
 posting 5 message(s); interval raised to 2.0s (minimum)
 ```
+
+All error replies are ephemeral for the same reason.
+
+**What is not private**
+
+Discord renders a line in the channel saying who used the command (`kyle used /spam`). That is the client's UI for slash-command invocations, not a message the bot sends, and an application cannot suppress it. The bot's own replies are hidden; the fact that the command ran is not. The messages themselves are public by definition — they are the feature.
+
+If the run should be fully private, this bot cannot do it: `/spam` is guild-only and gated on `Manage Messages`, so it cannot be invoked in a DM where the invocation line would not appear. Privacy here covers the replies, not the fact that the command ran.
 
 **Errors** (exact strings the user sees)
 
