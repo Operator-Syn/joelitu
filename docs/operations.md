@@ -14,7 +14,9 @@ docker compose pull
 docker compose up -d
 ```
 
-If the image pull is refused (`denied` or `unauthorized`), the GHCR package is still private. Either make it public once in the package settings, or log in on the VPS with a token that has `read:packages`:
+The GHCR package is public, so no login is needed on the VPS: an anonymous pull returns the manifest. Verified 2026-11-25 — `HTTP/2 200` for `ghcr.io/v2/operator-syn/joelitu/manifests/latest`.
+
+If you ever make the package private, the VPS needs a token with `read:packages`:
 
 ```sh
 echo "$GHCR_TOKEN" | docker login ghcr.io -u Operator-Syn --password-stdin
