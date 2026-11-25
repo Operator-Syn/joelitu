@@ -30,7 +30,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 COPY src ./src
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
+    cargo clean -p joelitu && \
     cargo build --release && \
+    output="$(env -u DISCORD_TOKEN ./target/release/joelitu 2>&1)"; status=$?; \
+    test "$status" -eq 1 && \
+    printf '%s' "$output" | grep -q 'DISCORD_TOKEN is required but not set' && \
     cp target/release/joelitu /usr/local/bin/joelitu
 
 # Runtime: glibc, because the GNU target needs it. musl would allow `scratch`, but
