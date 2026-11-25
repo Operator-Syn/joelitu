@@ -164,4 +164,19 @@ Two guards replace "pick an interval that feels slow enough".
 
 Timing uses `tokio::time::Instant`, so the cooldown is exercised under `start_paused` in tests rather than by waiting five real minutes.
 
+---
+
+## 2026-11-25 — Throughput comes from shared budgets, not from going faster
+
+The previous design conflated two things: how fast a run should send, and how much a channel may receive. A per-run `sleep` answered the first, and a one-run-per-channel cap was the only thing answering the second — which meant a second user in the same channel was refused rather than served.
+
+`spam::pacer` now owns both budgets: five tokens per channel refilling at one per second, and fifty per second for the process. A send waits for a token instead of being refused. The ceiling on concurrent runs rises to four because it is no longer a rate control, only a fairness and memory bound: four runs share one channel allowance, so the channel's output is bounded no matter how many are active, and each user gets latency rather than an error.
+
+The per-run interval stays, floored at 2 s, as a fairness floor: one run cannot consume the whole channel allowance by itself, leaving half available for a concurrent run.
+
+The runner changed with it: the send is now raced against cancellation, because waiting for a permit is unbounded and `/cancel` must be able to interrupt a queued send. Without the race the command would appear frozen behind a queue.
+
+Rejected again: any scheme that disguises the traffic — spreading sends across webhooks, jittering to look human, or splitting a run across channels. The budgets match Discord's published allowances; the goal is to stay inside them by construction, not to hide from them.
+
+
 
