@@ -57,9 +57,11 @@ pub async fn spam(
     //    is held, so replying is the whole recovery.
     let run = spam::prepare(data, ctx.channel_id(), raw)?;
 
-    // 3. Acknowledge before any message goes out. If this fails the run must not
-    //    proceed: a burst the caller never saw confirmed is worse than none, and
-    //    the prepared run is dropped here, releasing its slot.
+    // 3. Acknowledge before any message goes out, ephemerally: the count, the
+    //    clamped interval, and the fact that a run started are the caller's
+    //    business, not the channel's. If this fails the run must not proceed — a
+    //    burst nobody saw confirmed is worse than none — and the prepared run is
+    //    dropped here, releasing its slot.
     let plan = run.plan();
     let acknowledgement = if plan.interval_was_clamped() {
         format!(
@@ -71,7 +73,11 @@ pub async fn spam(
         format!("posting {} message(s)", plan.count())
     };
 
-    if let Err(error) = ctx.say(acknowledgement).await {
+    let reply = poise::CreateReply::default()
+        .content(acknowledgement)
+        .ephemeral(true);
+
+    if let Err(error) = ctx.send(reply).await {
         return Err(CommandError::Discord(error));
     }
 
