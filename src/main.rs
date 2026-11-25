@@ -27,7 +27,10 @@ use tracing_subscriber::EnvFilter;
 
 use crate::{
     config::Config,
-    spam::registry::{DEFAULT_MAX_RUNS_PER_CHANNEL, RunRegistry},
+    spam::{
+        pacer::Pacer,
+        registry::{DEFAULT_MAX_RUNS_PER_CHANNEL, RunRegistry},
+    },
 };
 
 /// Start the bot and block until the gateway stops or the process is signalled.
@@ -64,16 +67,22 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // 2. Configuration is read once, here, and passed down. Nothing else reads env.
     let config = Arc::new(Config::load()?);
 
-    // 3. The registry is created in `main` rather than inside setup so shutdown
-    //    handling keeps a handle to it.
+    // 3. The registry and pacer are created in `main` rather than inside setup so
+    //    shutdown handling keeps a handle to the registry, and so the pacer is a
+    //    single instance for the whole process rather than one per run.
     let runs = Arc::new(RunRegistry::new(DEFAULT_MAX_RUNS_PER_CHANNEL));
+    let pacer = Arc::new(Pacer::new());
 
     // 4. No intents are requested: slash commands arrive as interactions, which
     //    are not gated behind privileged intents, and the bot never reads messages.
     //    `ClientBuilder::new` is synchronous; poise adds `.framework(...)` and the
     //    builder is awaited to construct the client.
     let mut client = ClientBuilder::new(config.token.clone(), GatewayIntents::empty())
-        .framework(framework::build(config.clone(), runs.clone()))
+        .framework(framework::build(
+            config.clone(),
+            runs.clone(),
+            pacer.clone(),
+        ))
         .await?;
 
     // 5. SIGTERM is what `docker stop` sends. Cancelling inside the grace period
