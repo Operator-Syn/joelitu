@@ -68,18 +68,20 @@ impl PreparedRun {
 ///
 /// * Any [`crate::error::PlanError`], surfaced as [`CommandError::Plan`], when
 ///   the request does not validate.
-/// * [`CommandError::MentionCooldown`] when the plan mentions a user who was
-///   already mentioned in this channel within the cooldown window.
 /// * [`CommandError::ChannelBusy`] when the channel already holds the maximum
 ///   number of runs. The slot is not reserved in that case.
 ///
 /// # Processing
 ///
 /// 1. Validate before reserving, so a rejected request never occupies a slot.
-/// 2. Reject a mention still on cooldown, before reserving for the same reason.
-/// 3. Reserve; on refusal report the channel's current occupancy.
-/// 4. Record the mention only once the slot is held, so a refused run cannot put
-///    a user on cooldown for messages that were never sent.
+/// 2. Reserve; on refusal report the channel's current occupancy.
+///
+/// # Constraints
+///
+/// The only limit on mentioning someone is the caller's count and the pacing
+/// budgets. There is deliberately no per-target cooldown: an earlier version had a
+/// five-minute one, which did not prevent a single 99-message run from pinging the
+/// target ninety-nine times and did block all ordinary use in between.
 pub fn prepare(
     data: &Data,
     channel_id: ChannelId,
@@ -88,25 +90,7 @@ pub fn prepare(
     // 1. Pure validation first: a bad request must not consume capacity.
     let plan = Plan::validate(raw)?;
 
-    // 2. Read-only cooldown check. Rounding up means a sub-second remainder is
-    //    reported as 1 s rather than 0 s, which would read as "allowed" while the
-    //    check just refused.
-    //
-    //    Nested rather than a single `if let ... && let ...`: chained let expressions
-    //    are stable only from Rust 1.88, and this crate pins 1.85 in CI and in the
-    //    Dockerfile. A newer local compiler accepts them and the pipeline does not.
-    if let Some(user_id) = plan.mention_user_id() {
-        if let Some(remaining) = data
-            .runs
-            .mention_cooldown_remaining(channel_id.get(), user_id)
-        {
-            return Err(CommandError::MentionCooldown {
-                remaining_secs: remaining.as_secs().max(1),
-            });
-        }
-    }
-
-    // 3. Reservation is the only shared-state mutation here, and it is atomic
+    // 2. Reservation is the only shared-state mutation here, and it is atomic
     //    inside the registry, so two simultaneous commands cannot both observe a
     //    free slot.
     let (id, token) = data
@@ -115,11 +99,6 @@ pub fn prepare(
         .ok_or(CommandError::ChannelBusy {
             active: data.runs.active_in_channel(channel_id.get()),
         })?;
-
-    // 4. Only now does the mention count against the cooldown.
-    if let Some(user_id) = plan.mention_user_id() {
-        data.runs.record_mention(channel_id.get(), user_id);
-    }
 
     Ok(PreparedRun { id, token, plan })
 }
