@@ -10,8 +10,10 @@
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 /// Default ceiling on concurrent runs within a single channel.
@@ -25,6 +27,17 @@ use tokio_util::sync::CancellationToken;
 /// Serialising per channel is what keeps "the interval is the interval" a fact.
 /// A second `/spam` in the same channel is refused rather than made unreliable.
 pub const DEFAULT_MAX_RUNS_PER_CHANNEL: usize = 1;
+
+/// How long a user may not be mentioned again in the same channel.
+///
+/// Five minutes. This is the guard against the shape that causes complaints: the
+/// same person being pinged run after run. It does not restrict plain messages —
+/// only mentions — so a channel can still be filled with text as many times as the
+/// count allows.
+///
+/// Measured with `tokio::time::Instant`, which follows the pausable clock, so tests
+/// can advance it instead of sleeping for five real minutes.
+pub const MENTION_COOLDOWN: Duration = Duration::from_secs(300);
 
 /// One active run, as the registry sees it.
 struct RunHandle {
@@ -42,6 +55,10 @@ struct RegistryState {
     /// Next id to hand out. Monotonic for the process lifetime, so an id is never
     /// reused even after its run is gone.
     next_id: u64,
+    /// Last time each `(channel, user)` pair was mentioned. Entries older than
+    /// [`MENTION_COOLDOWN`] are pruned on access rather than on a timer, so an idle
+    /// process holds nothing.
+    mentions: HashMap<(u64, u64), Instant>,
 }
 
 /// Tracks active runs and hands out run ids.
@@ -76,9 +93,49 @@ impl RunRegistry {
             state: Mutex::new(RegistryState {
                 runs: HashMap::new(),
                 next_id: 0,
+                mentions: HashMap::new(),
             }),
             max_per_channel,
         }
+    }
+
+    /// How long until `user_id` may be mentioned again in `channel_id`.
+    ///
+    /// # Returns
+    ///
+    /// `None` when the pair is free to mention. `Some(remaining)` when a run
+    /// mentioned that user in that channel within [`MENTION_COOLDOWN`], so the
+    /// caller can report a useful wait instead of a bare refusal.
+    ///
+    /// # Side effects
+    ///
+    /// Prunes expired entries for the queried pair. A stale entry for a different
+    /// pair is removed when that pair is next queried, which is why the map stays
+    /// small without a background task.
+    pub fn mention_cooldown_remaining(&self, channel_id: u64, user_id: u64) -> Option<Duration> {
+        let mut state = self.state.lock().expect("registry mutex is never poisoned");
+        let key = (channel_id, user_id);
+
+        let last = *state.mentions.get(&key)?;
+        let elapsed = last.elapsed();
+
+        if elapsed >= MENTION_COOLDOWN {
+            state.mentions.remove(&key);
+            return None;
+        }
+
+        Some(MENTION_COOLDOWN - elapsed)
+    }
+
+    /// Record that `user_id` was just mentioned in `channel_id`.
+    ///
+    /// # Constraints
+    ///
+    /// Call this only after the run has been reserved. Recording before a refused
+    /// reservation would put a user on cooldown for a run that never happened.
+    pub fn record_mention(&self, channel_id: u64, user_id: u64) {
+        let mut state = self.state.lock().expect("registry mutex is never poisoned");
+        state.mentions.insert((channel_id, user_id), Instant::now());
     }
 
     /// Reserve a slot for a new run and return its id and cancellation token.
@@ -276,6 +333,34 @@ mod tests {
         assert_eq!(registry.cancel_channel(10), 1);
         assert!(token_a.is_cancelled());
         assert!(!token_b.is_cancelled());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn mention_cooldown_blocks_then_expires() {
+        let registry = registry();
+
+        assert!(
+            registry.mention_cooldown_remaining(10, 42).is_none(),
+            "a user who was never mentioned is free"
+        );
+
+        registry.record_mention(10, 42);
+
+        let remaining = registry
+            .mention_cooldown_remaining(10, 42)
+            .expect("the recorded pair must be on cooldown");
+        assert!(remaining <= MENTION_COOLDOWN);
+        assert!(
+            registry.mention_cooldown_remaining(11, 42).is_none(),
+            "the cooldown is per channel, so another channel is free"
+        );
+
+        tokio::time::advance(MENTION_COOLDOWN + Duration::from_secs(1)).await;
+
+        assert!(
+            registry.mention_cooldown_remaining(10, 42).is_none(),
+            "an expired entry must be pruned and allowed"
+        );
     }
 
     #[test]
