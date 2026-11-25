@@ -9,6 +9,7 @@
 //! This module owns the one place that both touches the registry and writes the
 //! terminal log line, so the registry's release invariant has a single home.
 
+pub mod pacer;
 pub mod plan;
 pub mod registry;
 pub mod runner;
@@ -23,6 +24,7 @@ use crate::{
     data::Data,
     error::{CommandError, SendError},
 };
+use pacer::Pacer;
 use plan::{Plan, RawRequest};
 use registry::{RunGuard, RunRegistry};
 use runner::{Outcome, drive};
@@ -129,6 +131,8 @@ pub fn prepare(
 /// * `run` - The reserved run from [`prepare`]. Consumed.
 /// * `runs` - The registry the guard must release into. Cloned `Arc`, so the
 ///   spawned task can own it.
+/// * `pacer` - Shared channel and process send budgets. Every send waits for a
+///   permit, so a busy channel queues rather than failing or bursting.
 /// * `http` - REST client used for every send. Cloned `Arc` per message, which is
 ///   a refcount bump rather than a connection.
 /// * `channel_id` - Destination channel.
@@ -142,10 +146,20 @@ pub fn prepare(
 /// # Constraints
 ///
 /// The send closure is the only place a message is constructed, and it always sets
-/// `allowed_mentions` explicitly: either the single planned user, or empty. That
-/// is what prevents `@everyone` typed into the body from pinging — the default is
-/// not relied on.
-pub fn start(run: PreparedRun, runs: Arc<RunRegistry>, http: Arc<Http>, channel_id: ChannelId) {
+/// `allowed_mentions` explicitly: either the single planned user, or empty. That is
+/// what prevents `@everyone` typed into the body from pinging — the default is not
+/// relied on.
+///
+/// The permit wait happens inside the send future, so the runner's cancellation race
+/// covers it. Moving the wait outside the closure would make `/cancel` unresponsive
+/// for the length of a queue.
+pub fn start(
+    run: PreparedRun,
+    runs: Arc<RunRegistry>,
+    pacer: Arc<Pacer>,
+    http: Arc<Http>,
+    channel_id: ChannelId,
+) {
     let PreparedRun { id, token, plan } = run;
 
     tokio::spawn(async move {
@@ -163,8 +177,13 @@ pub fn start(run: PreparedRun, runs: Arc<RunRegistry>, http: Arc<Http>, channel_
                 .content(content)
                 .allowed_mentions(allowed);
             let http = http.clone();
+            let pacer = pacer.clone();
 
             async move {
+                // Both budgets are checked here, immediately before the send, so the
+                // permit cannot go stale between acquisition and use.
+                pacer.acquire(channel_id.get()).await;
+
                 channel_id
                     .send_message(&http, message)
                     .await
