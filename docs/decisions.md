@@ -137,3 +137,18 @@ The GNU target needs glibc, so the runtime image is `debian:bookworm-slim`.
 A musl static binary would allow `scratch` and a smaller image, at the cost of extra build tooling for the TLS stack. The payoff is a few megabytes on a VPS with disk to spare, so the simpler build wins.
 
 The release profile keeps `debug = "line-tables-only"` and `panic = "unwind"`, and does not strip symbols: a backtrace is the only diagnostic available after a container restart.
+
+---
+
+## 2026-11-25 — `MAX_COUNT` is 99, and one run per channel
+
+Raising the ceiling from 10 to 99 is a parameter change. It exposed a separate defect that had to be fixed with it.
+
+`DEFAULT_MAX_RUNS_PER_CHANNEL` was 2, justified by the claim that "two runs pacing at the floor still land under five messages per five seconds". That arithmetic was wrong when it was written: two runs at 1.2 s is 2 messages per 1.2 s, about 8.3 per five seconds, against an allowance of roughly 5. At five messages each the overlap lasted six seconds and produced a handful of 429s nobody noticed. At 99 messages each the overlap would last two minutes of retries, so the bug had to go before the ceiling moved.
+
+The cap is now 1. A second `/spam` in a channel is refused rather than run unreliably, which keeps "the interval is the interval" true.
+
+Rejected: making the pacing floor adaptive so concurrent runs share a budget. It preserves concurrency at the cost of a second pacing story the tests would have to model. Serialising is one constant and one honest error message.
+
+Also rejected: anything that disguises the traffic to avoid platform detection — spreading sends across webhooks or tokens, jittering timing to look human, or splitting a run across channels. The rate limits are enforced server-side per route, and evasion is what turns rate limiting into application termination. The command stays inside the documented allowance instead.
+
