@@ -44,6 +44,25 @@ pub fn build(
     poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: vec![commands::spam::spam(), commands::cancel::cancel()],
+            // Errors are the caller's business: a validation failure, a busy channel
+            // or a cooldown refusal is sent ephemerally so the channel does not see
+            // who tried and what went wrong.
+            on_error: |error| {
+                Box::pin(async move {
+                    match error {
+                        poise::FrameworkError::Command { error, ctx, .. } => {
+                            let reply = poise::CreateReply::default()
+                                .content(error.to_string())
+                                .ephemeral(true);
+
+                            if let Err(send_error) = ctx.send(reply).await {
+                                tracing::warn!(%send_error, "failed to deliver an error reply");
+                            }
+                        }
+                        other => tracing::error!(%other, "framework error"),
+                    }
+                })
+            },
             ..Default::default()
         })
         .setup(move |ctx, _ready: &Ready, framework| {
