@@ -18,9 +18,13 @@ pub const DEFAULT_COUNT: u8 = 5;
 
 /// Hard ceiling on a single run, regardless of what the caller asks for.
 ///
-/// Ten messages twenty seconds apart is already obnoxious; past that it stops
-/// being a novelty and becomes abuse automation.
-pub const MAX_COUNT: u8 = 10;
+/// 99 at the 1.2 s floor is about two minutes of continuous posting. The ceiling
+/// stays in code rather than in configuration for the same reason the floor does:
+/// it is what bounds a mistake to a bad two minutes instead of an open-ended one.
+/// It also interacts with [`crate::spam::registry::DEFAULT_MAX_RUNS_PER_CHANNEL`] —
+/// two 99-message runs in one channel exceed Discord's per-channel budget and will
+/// spend most of their life in 429 retries.
+pub const MAX_COUNT: u8 = 99;
 
 /// Fastest permitted pacing between two messages.
 ///
