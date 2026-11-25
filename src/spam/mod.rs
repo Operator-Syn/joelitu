@@ -55,8 +55,9 @@ impl PreparedRun {
 /// # Arguments
 ///
 /// * `data` - Shared state; only the registry is touched here.
-/// * `channel_id` - Channel the run will post into. Doubles as the ceiling scope
-///   and the `/cancel` scope.
+/// * `channel_id` - Channel the run will post into. Half of the `/cancel` scope.
+/// * `author` - User starting the run. Recorded so `/cancel` can be limited to
+///   their own runs.
 /// * `raw` - The caller's request, validated into a [`Plan`].
 ///
 /// # Returns
@@ -85,6 +86,7 @@ impl PreparedRun {
 pub fn prepare(
     data: &Data,
     channel_id: ChannelId,
+    author: UserId,
     raw: RawRequest,
 ) -> Result<PreparedRun, CommandError> {
     // 1. Pure validation first: a bad request must not consume capacity.
@@ -93,12 +95,12 @@ pub fn prepare(
     // 2. Reservation is the only shared-state mutation here, and it is atomic
     //    inside the registry, so two simultaneous commands cannot both observe a
     //    free slot.
-    let (id, token) = data
-        .runs
-        .reserve(channel_id.get())
-        .ok_or(CommandError::ChannelBusy {
-            active: data.runs.active_in_channel(channel_id.get()),
-        })?;
+    let (id, token) =
+        data.runs
+            .reserve(channel_id.get(), author.get())
+            .ok_or(CommandError::ChannelBusy {
+                active: data.runs.active_in_channel(channel_id.get()),
+            })?;
 
     Ok(PreparedRun { id, token, plan })
 }
