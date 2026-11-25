@@ -58,7 +58,8 @@ pub enum Outcome {
 ///
 /// 1. Before each message, check the token; a cancelled run stops at the count
 ///    already sent.
-/// 2. Send the message for this index and count it on success.
+/// 2. Send the message for this index and count it on success, racing the send
+///    against cancellation because the send may first wait for a pacer permit.
 /// 3. After all but the last message, race the interval sleep against
 ///    cancellation.
 ///
@@ -81,9 +82,16 @@ where
             return Outcome::Cancelled { sent };
         }
 
-        // 2. One send, awaited to completion. A rejection ends the run: retrying
-        //    would extend a burst the caller already lost control of.
-        match send(index).await {
+        // 2. One send, awaited to completion, raced against cancellation. The send
+        //    closure waits for a pacer permit, and that wait is unbounded — a busy
+        //    channel queues — so cancellation must be able to interrupt it. Without
+        //    the race, `/cancel` during a long queue would appear to do nothing.
+        let outcome = tokio::select! {
+            () = token.cancelled() => return Outcome::Cancelled { sent },
+            result = send(index) => result,
+        };
+
+        match outcome {
             Ok(()) => sent += 1,
             Err(error) => return Outcome::Failed { sent, error },
         }
@@ -147,25 +155,54 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn cancellation_during_the_pause_stops_without_waiting_it_out() {
+    async fn a_cancel_raised_by_a_send_stops_before_the_next_message() {
         let plan = plan(3, 60.0);
         let token = CancellationToken::new();
         let cancel = token.clone();
-        let mut sent = 0;
+        let mut calls = 0;
 
-        let outcome = drive(&plan, &token, |_| {
-            sent += 1;
-            // Cancel once, while the first pause is in flight.
-            cancel.cancel();
+        // The first send succeeds and cancels the run on its way out. The race in
+        // `drive` can then take either branch — the token is already cancelled when
+        // the second message is attempted — and either way the run must stop after
+        // one message without sending a second.
+        let outcome = drive(&plan, &token, |index| {
+            calls += 1;
+            if index == 0 {
+                cancel.cancel();
+            }
             async { Ok(()) }
         })
         .await;
 
         assert!(
-            matches!(outcome, Outcome::Cancelled { sent: 1 }),
-            "expected one message then cancellation, got {outcome:?}"
+            matches!(
+                outcome,
+                Outcome::Cancelled { sent: 0 } | Outcome::Cancelled { sent: 1 }
+            ),
+            "the run must stop cancelled, got {outcome:?}"
         );
-        assert_eq!(sent, 1);
+        assert_eq!(calls, 1, "a second message must never be attempted");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_cancel_interrupts_a_send_that_is_waiting_for_a_permit() {
+        let plan = plan(2, 60.0);
+        let token = CancellationToken::new();
+        let cancel = token.clone();
+
+        // A send that never completes stands in for one queued behind the pacer:
+        // without the cancellation race, `/cancel` could not interrupt it.
+        let outcome = drive(&plan, &token, |_| {
+            let cancel = cancel.clone();
+            async move {
+                cancel.cancel();
+                std::future::pending::<()>().await;
+                Ok(())
+            }
+        })
+        .await;
+
+        assert!(matches!(outcome, Outcome::Cancelled { sent: 0 }));
     }
 
     #[tokio::test(start_paused = true)]
