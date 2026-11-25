@@ -17,9 +17,9 @@ Both commands are guild-only and require **Manage Messages**.
 
 - Posts `message` `count` times.
 - `mention` appears on **every message**, so a default run pings the target five times.
-- `interval` below 2.0 s is raised to 2.0 s and the acknowledgement says so. The floor is derived from a channel budget of 30 messages per minute, so a run cannot outpace what the channel allows however large `count` is.
+- `interval` below 2.0 s is raised to 2.0 s and the acknowledgement says so. The floor is half the channel's sustained allowance (the pacer permits a burst of 5 then one per second), so a single run cannot consume all of it and a concurrent run still gets through.
 - `count` outside 1–99 is rejected, not clamped: asking for 500 is a mistake worth reporting.
-- One run may be active per channel. A second `/spam` in the same channel is refused until the first finishes or is cancelled — two runs pacing independently would put twice the messages into one channel and spend most of their life in 429 retries.
+- Up to **4 runs** may be in flight in one channel. Each message in every run waits for a shared channel budget (5 burst, then 1/second) and a process-wide budget (50/second), so the channel's total output stays inside what Discord allows and a busy channel queues rather than failing or bursting. A fifth run in the same channel is refused until one finishes.
 - At `count:99` a run lasts about three minutes.
 - A given user may be mentioned **once per channel every 5 minutes**. A second mention inside that window is refused with the remaining time. Plain messages are not rate-limited this way; only mentions are.
 - The message body is posted as written. Mentions typed into the body — `@everyone`, role mentions — do **not** ping, because the allowed-mentions set is exactly the optional `mention` user.
