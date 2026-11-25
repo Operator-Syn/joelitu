@@ -8,7 +8,7 @@ Rust, one process, one container, no database.
 
 | Command | Effect |
 | --- | --- |
-| `/spam message:<text> [mention:@user] [count:1-99] [interval:seconds]` | Posts the message `count` times, `interval` seconds apart. Defaults: 5 messages, 2 s. The mention is attached to every message, and one user can be mentioned once per channel every five minutes. |
+| `/spam message:<text> [mention:@user] [count:1-99] [interval:seconds]` | Posts the message `count` times, `interval` seconds apart. Defaults: 5 messages, 2 s. The mention is attached to every message. |
 | `/cancel` | Stops every active run in the current channel. |
 
 Both require **Manage Messages** and work in guilds only. Full contract: [`docs/commands.md`](docs/commands.md).
