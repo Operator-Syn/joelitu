@@ -16,9 +16,10 @@ src/
 │   └── cancel.rs
 └── spam/          The feature
     ├── mod.rs     prepare / start; owns the guard and terminal logging
+    ├── pacer.rs   Channel and process send budgets; waits instead of refusing
     ├── plan.rs    Pure: limits, validation, rendering
     ├── runner.rs  Pacing loop and cancellation
-    └── registry.rs  Active runs, per-channel cap, release guard
+    └── registry.rs  Active runs, per-channel cap, release guard, mention cooldown
 ```
 
 ## Allowed dependency edges
@@ -28,6 +29,7 @@ src/
 | `plan` | `error` | anything with I/O, async, or serenity |
 | `runner` | `plan`, `error` | registry, serenity types other than the error path |
 | `registry` | `tokio-util` | the domain or the transport |
+| `pacer` | `tokio` time | the domain, the transport, or the registry |
 | `spam` (mod) | `plan`, `runner`, `registry`, `data` | `commands` |
 | `commands/*` | `spam`, `data`, `error` | `spam::registry` internals |
 | `framework` | `commands`, `data`, `config` | anything in `spam` beyond what commands need |
@@ -47,7 +49,21 @@ The compiler cannot enforce this table; a reviewer does. The rule that makes it 
 - **Every reservation is released.** Enforced by `RunGuard`'s destructor, not by callers remembering.
 - **Pacing uses `sleep`, never `interval`.** `tokio::time::interval` fires its first tick immediately, which sends messages one and two back to back.
 - **`allowed_mentions` is always set explicitly.** Either the single planned user or empty. A literal `@everyone` typed into the message body must never ping; the only ping in a run is the one the caller selected.
-- **One process.** The registry is the source of truth for active runs; two processes would each have their own.
+- **The permit is taken immediately before the send, inside the send future.** Taking it earlier lets it go stale; taking it outside the future makes `/cancel` unable to interrupt a queued send.
+- **One process.** The registry and the pacer are the source of truth for active runs and send budgets; two processes would each have their own.
+
+## Throughput
+
+Two budgets, both in `pacer`, both enforced at send time:
+
+| Scope | Burst | Sustained | Why |
+| --- | --- | --- | --- |
+| Channel | 5 | 1/s | Discord's roughly-five-per-five-seconds allowance |
+| Process | 50 | 50/s | Discord's global bucket for a bot |
+
+A caller **waits** for a token rather than being refused, so capacity shows up as latency, not errors. That is what allows four concurrent runs per channel: they share one allowance, and the channel's total output stays inside it regardless of how many are active. The per-run `interval` (floor 2 s) is a fairness floor so one run cannot consume the whole channel allowance by itself.
+
+None of this disguises traffic. The budgets match Discord's published allowances; the point is to stay inside them by construction instead of discovering them through 429s.
 
 ## Shutdown
 
