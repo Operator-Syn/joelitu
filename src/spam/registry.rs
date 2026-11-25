@@ -29,8 +29,11 @@ pub const DEFAULT_MAX_RUNS_PER_CHANNEL: usize = 4;
 
 /// One active run, as the registry sees it.
 struct RunHandle {
-    /// Channel the run posts into. The scope `/cancel` operates on.
+    /// Channel the run posts into. Half of the `/cancel` scope.
     channel_id: u64,
+    /// User who started the run. The other half: cancellation reaches only runs
+    /// their own author asked for, so one member cannot stop another's.
+    started_by: u64,
     /// Signal the owning task watches.
     token: CancellationToken,
 }
@@ -100,7 +103,7 @@ impl RunRegistry {
     /// The entry stays in the map until released. Callers must hold a
     /// [`RunGuard`] so release happens even on panic; dropping the token without
     /// releasing would leak a slot for the process lifetime.
-    pub fn reserve(&self, channel_id: u64) -> Option<(u64, CancellationToken)> {
+    pub fn reserve(&self, channel_id: u64, started_by: u64) -> Option<(u64, CancellationToken)> {
         let mut state = self.state.lock().expect("registry mutex is never poisoned");
 
         // Count first: the ceiling is per channel, not global, so the check is a
@@ -123,6 +126,7 @@ impl RunRegistry {
             id,
             RunHandle {
                 channel_id,
+                started_by,
                 token: token.clone(),
             },
         );
@@ -130,21 +134,29 @@ impl RunRegistry {
         Some((id, token))
     }
 
-    /// Cancel every run in a channel and return how many were signalled.
+    /// Cancel every run `started_by` owns in `channel_id`, and return how many were
+    /// signalled.
+    ///
+    /// # Arguments
+    ///
+    /// * `channel_id` - Channel to look in.
+    /// * `started_by` - The caller. Runs in the same channel started by anyone else
+    ///   are left alone, which is the point: a member holding `Manage Messages` must
+    ///   not be able to stop someone else's burst.
     ///
     /// # Returns
     ///
     /// The number of runs whose tokens were cancelled. They are not removed here;
-    /// each owning task removes its own entry when it observes the cancellation,
-    /// so the count reflects entries present at call time.
-    pub fn cancel_channel(&self, channel_id: u64) -> usize {
+    /// each owning task removes its own entry when it observes the cancellation, so
+    /// the count reflects entries present at call time.
+    pub fn cancel_owned_in_channel(&self, channel_id: u64, started_by: u64) -> usize {
         let state = self.state.lock().expect("registry mutex is never poisoned");
 
         let mut cancelled = 0;
         for run in state
             .runs
             .values()
-            .filter(|run| run.channel_id == channel_id)
+            .filter(|run| run.channel_id == channel_id && run.started_by == started_by)
         {
             run.token.cancel();
             cancelled += 1;
@@ -243,7 +255,7 @@ mod tests {
     fn reserve_tracks_the_run_until_dropped() {
         let registry = registry();
 
-        let (id, _token) = registry.reserve(10).expect("first run fits");
+        let (id, _token) = registry.reserve(10, 1).expect("first run fits");
         assert_eq!(registry.active_in_channel(10), 1);
         assert_eq!(registry.active_total(), 1);
 
@@ -257,32 +269,41 @@ mod tests {
     fn channel_ceiling_is_enforced_and_per_channel() {
         let registry = registry();
 
-        let _first = registry.reserve(10).expect("first run fits");
-        let _second = registry.reserve(10).expect("second run fits");
-        assert!(registry.reserve(10).is_none(), "third must be refused");
+        let _first = registry.reserve(10, 1).expect("first run fits");
+        let _second = registry.reserve(10, 1).expect("second run fits");
+        assert!(registry.reserve(10, 1).is_none(), "third must be refused");
 
         assert!(
-            registry.reserve(11).is_some(),
+            registry.reserve(11, 1).is_some(),
             "a different channel has its own ceiling"
         );
     }
 
     #[test]
-    fn cancel_channel_signals_only_that_channel() {
+    fn cancel_reaches_only_the_callers_runs_in_that_channel() {
         let registry = registry();
 
-        let (_id_a, token_a) = registry.reserve(10).expect("run a fits");
-        let (_id_b, token_b) = registry.reserve(11).expect("run b fits");
+        let (_mine, my_token) = registry.reserve(10, 1).expect("my run fits");
+        let (_theirs, their_token) = registry.reserve(10, 2).expect("their run fits");
+        let (_elsewhere, other_channel) = registry.reserve(11, 1).expect("other channel fits");
 
-        assert_eq!(registry.cancel_channel(10), 1);
-        assert!(token_a.is_cancelled());
-        assert!(!token_b.is_cancelled());
+        // Only the caller's run in the named channel is stopped.
+        assert_eq!(registry.cancel_owned_in_channel(10, 1), 1);
+        assert!(my_token.is_cancelled());
+        assert!(
+            !their_token.is_cancelled(),
+            "another member's run in the same channel must survive"
+        );
+        assert!(
+            !other_channel.is_cancelled(),
+            "the caller's run in a different channel must survive"
+        );
     }
 
     #[test]
     fn guard_releases_during_unwind() {
         let registry = registry();
-        let (id, _token) = registry.reserve(10).expect("run fits");
+        let (id, _token) = registry.reserve(10, 1).expect("run fits");
 
         let unwind = std::panic::catch_unwind({
             let registry = registry.clone();
