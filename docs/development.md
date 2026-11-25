@@ -16,7 +16,11 @@ cargo fmt --check
 cargo run                     # needs DISCORD_TOKEN
 ```
 
-`cargo test` needs no credentials. The runner tests use `tokio::time::pause` and a recording closure; the registry tests use a `std::panic::catch_unwind` probe; the config tests inject a lookup closure instead of touching the environment.
+`cargo test` needs no credentials. The runner tests use `tokio::time::pause` and a recording closure; the registry tests use a `std::panic::catch_unwind` probe and the cooldown test advances the paused clock; the config tests inject a lookup closure instead of touching the environment.
+
+### Match the pinned toolchain, not your machine
+
+CI and the Dockerfile build with **1.85**, which is what `rust-toolchain.toml` pins. A newer local compiler accepts language features the pin does not — let-chains inside `if` conditions are stable from 1.88, so they compile here and fail in the pipeline with `error[E0658]`. If rustup is not managing the toolchain locally, `rustc --version` tells you whether you are ahead of the pin. Prefer the older syntax rather than raising the pin, unless there is a reason to move the whole toolchain.
 
 ## Continuous integration
 
