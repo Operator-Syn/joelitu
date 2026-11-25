@@ -1,6 +1,6 @@
 # joelitu
 
-A Discord bot that posts a message a bounded number of times, with an optional mention on the first message and a `/cancel` to stop a run in flight.
+A Discord bot that posts a message a bounded number of times, with an optional mention that repeats with every message, and a `/cancel` to stop a run in flight.
 
 Rust, one process, one container, no database.
 
@@ -8,7 +8,7 @@ Rust, one process, one container, no database.
 
 | Command | Effect |
 | --- | --- |
-| `/spam message:<text> [mention:@user] [count:1-10] [interval:seconds]` | Posts the message `count` times, `interval` seconds apart. Defaults: 5 messages, 1.2 s. The mention is attached to the first message only. |
+| `/spam message:<text> [mention:@user] [count:1-10] [interval:seconds]` | Posts the message `count` times, `interval` seconds apart. Defaults: 5 messages, 1.2 s. The mention is attached to every message. |
 | `/cancel` | Stops every active run in the current channel. |
 
 Both require **Manage Messages** and work in guilds only. Full contract: [`docs/commands.md`](docs/commands.md).
