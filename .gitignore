@@ -1,0 +1,4 @@
+/target
+/deploy/joelitu.env
+*.env
+!.env.example
