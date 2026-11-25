@@ -18,15 +18,16 @@ use tokio_util::sync::CancellationToken;
 
 /// Default ceiling on concurrent runs within a single channel.
 ///
-/// One. The earlier value of two made the pacing floor untrue: two runs each
-/// pacing at 1.2 s put 2 messages per 1.2 s into one channel, which is about 8.3
-/// per five seconds against Discord's allowance of roughly 5 — so a mixture of
-/// successful sends and 429 retries, not the steady pace the plan promises. At the
-/// current `MAX_COUNT` of 99 that overlap lasts two minutes instead of seconds.
+/// Four, and the number no longer decides the send rate — [`crate::spam::pacer`]
+/// does. The old ceiling of one existed because each run paced itself and two
+/// independent runs doubled a channel's output. With both budgets enforced per
+/// channel by a shared pacer, several runs can share the same allowance: they queue
+/// for tokens, so the channel's total stays inside Discord's limit while four users
+/// can have work in flight instead of being refused with "channel busy".
 ///
-/// Serialising per channel is what keeps "the interval is the interval" a fact.
-/// A second `/spam` in the same channel is refused rather than made unreliable.
-pub const DEFAULT_MAX_RUNS_PER_CHANNEL: usize = 1;
+/// Four rather than unbounded because a run holds a registry entry and a task; the
+/// ceiling is a memory and fairness bound, not a rate bound.
+pub const DEFAULT_MAX_RUNS_PER_CHANNEL: usize = 4;
 
 /// How long a user may not be mentioned again in the same channel.
 ///
