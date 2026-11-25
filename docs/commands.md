@@ -21,7 +21,7 @@ Both commands are guild-only and require **Manage Messages**.
 - `count` outside 1–99 is rejected, not clamped: asking for 500 is a mistake worth reporting.
 - Up to **4 runs** may be in flight in one channel. Each message in every run waits for a shared channel budget (5 burst, then 1/second) and a process-wide budget (50/second), so the channel's total output stays inside what Discord allows and a busy channel queues rather than failing or bursting. A fifth run in the same channel is refused until one finishes.
 - At `count:99` a run lasts about three minutes.
-- A given user may be mentioned **once per channel every 5 minutes**. A second mention inside that window is refused with the remaining time. Plain messages are not rate-limited this way; only mentions are.
+- A given user can be mentioned as often as `count` allows. There is no cooldown on mentions.
 - The message body is posted as written. Mentions typed into the body — `@everyone`, role mentions — do **not** ping, because the allowed-mentions set is exactly the optional `mention` user.
 
 **Acknowledgement**
@@ -50,7 +50,6 @@ If the run should be fully private, this bot cannot do it: `/spam` is guild-only
 | Count 0 or above 99 | `count must be between 1 and 99` |
 | NaN, infinite, or negative interval | `interval must be a finite number of seconds` |
 | Channel already at capacity | `this channel already has {n} run(s) in flight; wait for one to finish or cancel it` |
-| Same user mentioned too recently | `that user was mentioned here in the last few minutes; try again in about {n}s` |
 
 **Examples**
 
