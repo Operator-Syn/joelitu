@@ -18,7 +18,7 @@ pub const DEFAULT_COUNT: u8 = 5;
 
 /// Hard ceiling on a single run, regardless of what the caller asks for.
 ///
-/// 99 at the 1.2 s floor is about two minutes of continuous posting. The ceiling
+/// 99 at the pacing floor is about three minutes of continuous posting. The ceiling
 /// stays in code rather than in configuration for the same reason the floor does:
 /// it is what bounds a mistake to a bad two minutes instead of an open-ended one.
 /// It also interacts with [`crate::spam::registry::DEFAULT_MAX_RUNS_PER_CHANNEL`] —
@@ -26,11 +26,22 @@ pub const DEFAULT_COUNT: u8 = 5;
 /// spend most of their life in 429 retries.
 pub const MAX_COUNT: u8 = 99;
 
+/// Sustained message budget for one channel, in messages per minute.
+///
+/// Discord's documented allowance per channel is roughly five messages per five
+/// seconds. A budget of 30 per minute sits under that with room for the occasional
+/// burst and for serenity's own retries, and it is what [`MIN_INTERVAL`] is derived
+/// from, so the two cannot disagree.
+pub const CHANNEL_BUDGET_PER_MINUTE: u64 = 30;
+
 /// Fastest permitted pacing between two messages.
 ///
-/// Discord allows roughly five messages per five seconds in a channel. Sending
-/// faster than this queues and arrives in a lump, so the pacing would be a lie.
-pub const MIN_INTERVAL: Duration = Duration::from_millis(1_200);
+/// Derived from [`CHANNEL_BUDGET_PER_MINUTE`] rather than picked by feel: 30 per
+/// minute is one every two seconds. Because only one run may be active per channel,
+/// per-run pacing *is* channel pacing, so a run cannot exceed the budget no matter
+/// how large its count is. A 99-message run therefore takes about three minutes
+/// instead of two, which is the honest cost of staying inside the allowance.
+pub const MIN_INTERVAL: Duration = Duration::from_millis(60_000 / CHANNEL_BUDGET_PER_MINUTE);
 
 /// Discord's maximum message content length, in characters (not bytes).
 pub const MAX_MESSAGE_CHARS: usize = 2000;
