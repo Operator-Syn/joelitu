@@ -16,10 +16,15 @@ use tokio_util::sync::CancellationToken;
 
 /// Default ceiling on concurrent runs within a single channel.
 ///
-/// Chosen so one channel can never exceed Discord's per-channel allowance through
-/// the bot alone: two runs pacing at the floor still land under five messages per
-/// five seconds.
-pub const DEFAULT_MAX_RUNS_PER_CHANNEL: usize = 2;
+/// One. The earlier value of two made the pacing floor untrue: two runs each
+/// pacing at 1.2 s put 2 messages per 1.2 s into one channel, which is about 8.3
+/// per five seconds against Discord's allowance of roughly 5 — so a mixture of
+/// successful sends and 429 retries, not the steady pace the plan promises. At the
+/// current `MAX_COUNT` of 99 that overlap lasts two minutes instead of seconds.
+///
+/// Serialising per channel is what keeps "the interval is the interval" a fact.
+/// A second `/spam` in the same channel is refused rather than made unreliable.
+pub const DEFAULT_MAX_RUNS_PER_CHANNEL: usize = 1;
 
 /// One active run, as the registry sees it.
 struct RunHandle {
