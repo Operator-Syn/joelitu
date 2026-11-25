@@ -12,8 +12,8 @@ use crate::{
     spam::{self, plan::RawRequest},
 };
 
-/// Post a message a bounded number of times, optionally mentioning someone on the
-/// first message only.
+/// Post a message a bounded number of times, optionally mentioning someone on every
+/// message.
 ///
 /// Example: `/spam message:"good morning" count:3 interval:2`
 ///
@@ -22,7 +22,7 @@ use crate::{
 /// * `message` - Text to post. Rejected when empty or longer than 2000 characters.
 /// * `mention` - Optional user to mention. The mention is attached to the first
 ///   message only, so a run never becomes a ping burst.
-/// * `count` - How many messages, 1 to 10. Defaults to 5.
+/// * `count` - How many messages, 1 to 99. Defaults to 5.
 /// * `interval` - Seconds between messages. Anything under 1.2 is raised to 1.2 and
 ///   the reply says so.
 ///
@@ -35,10 +35,10 @@ use crate::{
 pub async fn spam(
     ctx: poise::Context<'_, Data, CommandError>,
     #[description = "Text to post. Up to 2000 characters."] message: String,
-    #[description = "User to mention on the first message only."] mention: Option<serenity::User>,
-    #[description = "How many messages to post (1-10, default 5)."]
+    #[description = "User to mention on every message."] mention: Option<serenity::User>,
+    #[description = "How many messages to post (1-99, default 5)."]
     #[min = 1]
-    #[max = 10]
+    #[max = 99]
     count: Option<u8>,
     #[description = "Seconds between messages (minimum 1.2)."] interval: Option<f64>,
 ) -> Result<(), CommandError> {
