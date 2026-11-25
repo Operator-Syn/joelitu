@@ -39,7 +39,7 @@ pub const MAX_MESSAGE_CHARS: usize = 2000;
 pub struct RawRequest {
     /// Message body as typed. May be empty or whitespace; validation rejects it.
     pub message: String,
-    /// Discord user id to mention on the first message only, if any.
+    /// Discord user id to mention on every message, if any.
     pub mention: Option<u64>,
     /// Requested message count. `None` means [`DEFAULT_COUNT`].
     pub count: Option<u8>,
@@ -60,7 +60,7 @@ pub struct Plan {
     count: u8,
     /// Gap between messages; always at least [`MIN_INTERVAL`].
     interval: Duration,
-    /// User to mention, on the first message only.
+    /// User to mention on every message.
     mention: Option<u64>,
     /// Whether the caller's interval was raised to [`MIN_INTERVAL`]. Reported
     /// back to the caller rather than clamped silently.
@@ -173,7 +173,7 @@ impl Plan {
         self.interval
     }
 
-    /// The user id that will be mentioned on the first message, if any.
+    /// The user id that will be mentioned on every message, if any.
     ///
     /// The send site must build `allowed_mentions` from exactly this value, so a
     /// literal `@everyone` or role mention typed into the message body cannot
@@ -190,24 +190,24 @@ impl Plan {
         self.interval_clamped
     }
 
-    /// Render the content for the message at `index` (zero-based).
+    /// Render the message body for one send.
     ///
     /// # Returns
     ///
-    /// The message body for the first message, prefixed with a Discord user
-    /// mention; the bare body for every later message. Indices at or beyond
-    /// [`Plan::count`] are never called by the runner and still render the bare
-    /// body rather than panicking.
+    /// The validated body, prefixed with a Discord user mention when one was
+    /// requested. Every message in a run carries the same content, including the
+    /// mention, because the caller asked for the mention to repeat with the text.
     ///
-    /// # Arguments
+    /// # Constraints
     ///
-    /// * `index` - Zero-based position within the run. Only the first position
-    ///   carries the mention, which is what makes "bounded mention" a rule
-    ///   instead of a hope.
-    pub fn content_for(&self, index: u8) -> String {
-        match (index, self.mention) {
-            (0, Some(user_id)) => format!("<@{user_id}> {}", self.message),
-            _ => self.message.clone(),
+    /// The prefix is a raw `<@id>` token rather than a resolved display name, so
+    /// rendering needs no cache lookup and cannot fail on a user the bot cannot
+    /// see. The ping only happens because the send site also allows that id in
+    /// `allowed_mentions`; text alone pings nothing.
+    pub fn content(&self) -> String {
+        match self.mention {
+            Some(user_id) => format!("<@{user_id}> {}", self.message),
+            None => self.message.clone(),
         }
     }
 }
@@ -328,7 +328,7 @@ mod tests {
     }
 
     #[test]
-    fn mention_appears_on_the_first_message_only() {
+    fn mention_appears_on_every_message() {
         let request = RawRequest {
             mention: Some(42),
             ..base()
@@ -336,8 +336,7 @@ mod tests {
 
         let plan = Plan::validate(request).expect("mention without count is legal");
 
-        assert_eq!(plan.content_for(0), "<@42> hello");
-        assert_eq!(plan.content_for(1), "hello");
+        assert_eq!(plan.content(), "<@42> hello");
         assert_eq!(plan.mention_user_id(), Some(42));
     }
 
@@ -345,7 +344,7 @@ mod tests {
     fn absent_mention_renders_the_bare_message() {
         let plan = Plan::validate(base()).expect("base request must validate");
 
-        assert_eq!(plan.content_for(0), "hello");
+        assert_eq!(plan.content(), "hello");
         assert_eq!(plan.mention_user_id(), None);
     }
 }
