@@ -6,12 +6,15 @@
 
 use crate::{data::Data, error::CommandError};
 
-/// Stop every `/spam` run currently active in this channel.
+/// Stop every `/spam` run **you** started in this channel.
+///
+/// Runs started by other members are untouched, even for a caller holding
+/// `Manage Messages`.
 ///
 /// # Returns
 ///
-/// Replies with how many runs were signalled. Zero is a normal answer, not an
-/// error: a run that already finished leaves nothing to cancel.
+/// Replies with how many of the caller's runs were signalled. Zero is a normal
+/// answer, not an error: a run that already finished leaves nothing to cancel.
 ///
 /// # Errors
 ///
@@ -32,12 +35,14 @@ use crate::{data::Data, error::CommandError};
 pub async fn cancel(ctx: poise::Context<'_, Data, CommandError>) -> Result<(), CommandError> {
     let data = ctx.data();
 
-    let cancelled = data.runs.cancel_channel(ctx.channel_id().get());
+    let cancelled = data
+        .runs
+        .cancel_owned_in_channel(ctx.channel_id().get(), ctx.author().id.get());
 
     let text = match cancelled {
-        0 => "no active run in this channel".to_owned(),
-        1 => "cancelling 1 run".to_owned(),
-        n => format!("cancelling {n} runs"),
+        0 => "you have no active run in this channel".to_owned(),
+        1 => "cancelling your 1 run".to_owned(),
+        n => format!("cancelling your {n} runs"),
     };
 
     // Ephemeral for the same reason as `/spam`'s acknowledgement: who is stopping
