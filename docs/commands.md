@@ -11,23 +11,24 @@ Both commands are guild-only and require **Manage Messages**.
 | `message` | text | yes | 1–2000 characters, not whitespace-only | — |
 | `mention` | user | no | any member | none |
 | `count` | integer | no | 1–99 | 5 |
-| `interval` | number (seconds) | no | ≥ 1.2 effective | 1.2 |
+| `interval` | number (seconds) | no | ≥ 2.0 effective | 2.0 |
 
 **Behaviour**
 
 - Posts `message` `count` times.
-- `mention` appears on **every message**, so a run at the default settings pings the target five times. Keep `count` low when the target is not in on the joke.
-- `interval` below 1.2 s is raised to 1.2 s and the acknowledgement says so.
+- `mention` appears on **every message**, so a default run pings the target five times.
+- `interval` below 2.0 s is raised to 2.0 s and the acknowledgement says so. The floor is derived from a channel budget of 30 messages per minute, so a run cannot outpace what the channel allows however large `count` is.
 - `count` outside 1–99 is rejected, not clamped: asking for 500 is a mistake worth reporting.
 - One run may be active per channel. A second `/spam` in the same channel is refused until the first finishes or is cancelled — two runs pacing independently would put twice the messages into one channel and spend most of their life in 429 retries.
-- At `count:99` and the 1.2 s floor a run lasts about two minutes.
+- At `count:99` a run lasts about three minutes.
+- A given user may be mentioned **once per channel every 5 minutes**. A second mention inside that window is refused with the remaining time. Plain messages are not rate-limited this way; only mentions are.
 - The message body is posted as written. Mentions typed into the body — `@everyone`, role mentions — do **not** ping, because the allowed-mentions set is exactly the optional `mention` user.
 
 **Acknowledgement**
 
 ```
 posting 5 message(s)
-posting 5 message(s); interval raised to 1.2s (minimum)
+posting 5 message(s); interval raised to 2.0s (minimum)
 ```
 
 **Errors** (exact strings the user sees)
@@ -36,16 +37,18 @@ posting 5 message(s); interval raised to 1.2s (minimum)
 | --- | --- |
 | Empty or whitespace message | `message must not be empty` |
 | Over 2000 characters | `message is {n} characters; the limit is 2000` |
-| Count 0 or above 10 | `count must be between 1 and 10` |
+| Count 0 or above 99 | `count must be between 1 and 99` |
 | NaN, infinite, or negative interval | `interval must be a finite number of seconds` |
 | Channel already at capacity | `this channel already has {n} run(s) in flight; wait for one to finish or cancel it` |
+| Same user mentioned too recently | `that user was mentioned here in the last few minutes; try again in about {n}s` |
 
 **Examples**
 
 ```
-/spam message:"good morning" count:3 interval:2
+/spam message:"good morning" count:3 interval:5
 /spam message:"hey" mention:@someone
 /spam message:"one more time" count:2
+/spam message:"the long one" count:99 mention:@someone
 ```
 
 ## `/cancel`
