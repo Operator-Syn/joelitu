@@ -81,6 +81,7 @@ pub async fn spam(
     spam::start(
         run,
         data.runs.clone(),
+        data.pacer.clone(),
         ctx.serenity_context().http.clone(),
         ctx.channel_id(),
     );
