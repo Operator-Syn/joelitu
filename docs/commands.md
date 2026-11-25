@@ -10,7 +10,7 @@ Both commands are guild-only and require **Manage Messages**.
 | --- | --- | --- | --- | --- |
 | `message` | text | yes | 1–2000 characters, not whitespace-only | — |
 | `mention` | user | no | any member | none |
-| `count` | integer | no | 1–10 | 5 |
+| `count` | integer | no | 1–99 | 5 |
 | `interval` | number (seconds) | no | ≥ 1.2 effective | 1.2 |
 
 **Behaviour**
@@ -18,8 +18,9 @@ Both commands are guild-only and require **Manage Messages**.
 - Posts `message` `count` times.
 - `mention` appears on **every message**, so a run at the default settings pings the target five times. Keep `count` low when the target is not in on the joke.
 - `interval` below 1.2 s is raised to 1.2 s and the acknowledgement says so.
-- `count` outside 1–10 is rejected, not clamped: asking for 50 is a mistake worth reporting.
-- Up to 2 runs may be active in one channel at a time.
+- `count` outside 1–99 is rejected, not clamped: asking for 500 is a mistake worth reporting.
+- One run may be active per channel. A second `/spam` in the same channel is refused until the first finishes or is cancelled — two runs pacing independently would put twice the messages into one channel and spend most of their life in 429 retries.
+- At `count:99` and the 1.2 s floor a run lasts about two minutes.
 - The message body is posted as written. Mentions typed into the body — `@everyone`, role mentions — do **not** ping, because the allowed-mentions set is exactly the optional `mention` user.
 
 **Acknowledgement**
