@@ -66,15 +66,17 @@ If the run should be fully private, this bot cannot do it: `/spam` is guild-only
 | --- | --- |
 | none | — |
 
-Stops every active run **in the calling channel**. Replies with the count:
+Stops every run **you started** in the calling channel. Runs started by other members are untouched, including when the caller holds `Manage Messages`.
+
+Replies with the count, ephemerally:
 
 ```
-cancelling 2 runs
-cancelling 1 run
-no active run in this channel
+cancelling your 2 runs
+cancelling your 1 run
+you have no active run in this channel
 ```
 
-`no active run in this channel` is a normal answer, not an error. A run that already finished leaves nothing to cancel, and the registry does not retain completed runs.
+`you have no active run in this channel` is a normal answer, not an error. A run that already finished leaves nothing to cancel, and the registry does not retain completed runs.
 
 ## Not implemented
 
