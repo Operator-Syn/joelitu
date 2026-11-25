@@ -22,19 +22,29 @@ use crate::{data::Data, error::CommandError};
 /// Cancels the tokens of matching runs. The registry entries are removed by each
 /// run's own guard as its task observes the cancellation, so the count reflects
 /// runs present at the moment of the call, not runs that have already stopped.
+///
+/// # Privacy
+///
+/// The reply is ephemeral: only the invoker sees which runs were stopped. Discord's
+/// own "user used /cancel" line is rendered by the client and cannot be hidden by
+/// the application.
 #[poise::command(slash_command, guild_only, required_permissions = "MANAGE_MESSAGES")]
 pub async fn cancel(ctx: poise::Context<'_, Data, CommandError>) -> Result<(), CommandError> {
     let data = ctx.data();
 
     let cancelled = data.runs.cancel_channel(ctx.channel_id().get());
 
-    let reply = match cancelled {
+    let text = match cancelled {
         0 => "no active run in this channel".to_owned(),
         1 => "cancelling 1 run".to_owned(),
         n => format!("cancelling {n} runs"),
     };
 
-    if let Err(error) = ctx.say(reply).await {
+    // Ephemeral for the same reason as `/spam`'s acknowledgement: who is stopping
+    // runs in a channel is the caller's business, not the channel's.
+    let reply = poise::CreateReply::default().content(text).ephemeral(true);
+
+    if let Err(error) = ctx.send(reply).await {
         return Err(CommandError::Discord(error));
     }
 
