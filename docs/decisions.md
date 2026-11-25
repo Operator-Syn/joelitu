@@ -152,3 +152,16 @@ Rejected: making the pacing floor adaptive so concurrent runs share a budget. It
 
 Also rejected: anything that disguises the traffic to avoid platform detection — spreading sends across webhooks or tokens, jittering timing to look human, or splitting a run across channels. The rate limits are enforced server-side per route, and evasion is what turns rate limiting into application termination. The command stays inside the documented allowance instead.
 
+---
+
+## 2026-11-25 — Pacing is derived from a channel budget, and mentions have a cooldown
+
+Two guards replace "pick an interval that feels slow enough".
+
+**Budget.** `CHANNEL_BUDGET_PER_MINUTE = 30`, and `MIN_INTERVAL` is computed from it (`60_000 / 30` = 2 s) instead of being a separate constant. Two numbers that must agree will eventually disagree; deriving one from the other makes that impossible. Because only one run may be active per channel, per-run pacing is channel pacing, so the budget holds at every `count` — a 99-message run simply takes about three minutes.
+
+**Cooldown.** A user may be mentioned once per channel every five minutes (`MENTION_COOLDOWN`), enforced in the registry, checked before the run reserves and recorded only after. That ordering matters: recording first would put a user on cooldown for a run that was then refused for a busy channel. The cooldown covers mentions only — plain messages are limited by the budget alone — because repeated pings at one person are the abuse shape, and repeated text is not.
+
+Timing uses `tokio::time::Instant`, so the cooldown is exercised under `start_paused` in tests rather than by waiting five real minutes.
+
+
