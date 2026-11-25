@@ -55,7 +55,7 @@ pub async fn spam(
 
     // 2. Validate and reserve. A failure here means nothing was sent and no slot
     //    is held, so replying is the whole recovery.
-    let run = spam::prepare(data, ctx.channel_id(), raw)?;
+    let run = spam::prepare(data, ctx.channel_id(), ctx.author().id, raw)?;
 
     // 3. Acknowledge before any message goes out, ephemerally: the count, the
     //    clamped interval, and the fact that a run started are the caller's
