@@ -125,8 +125,8 @@ pub fn start(run: PreparedRun, runs: Arc<RunRegistry>, http: Arc<Http>, channel_
         // so a slot cannot outlive its task.
         let _guard = RunGuard::new(runs, id);
 
-        let send = |index: u8| {
-            let content = plan.content_for(index);
+        let send = |_index: u8| {
+            let content = plan.content();
             let allowed = match plan.mention_user_id() {
                 Some(user_id) => CreateAllowedMentions::new().users([UserId::new(user_id)]),
                 None => CreateAllowedMentions::new(),
