@@ -104,7 +104,7 @@ The image job `needs: check`, so a red test suite publishes nothing. Every build
 
 `compose.yaml` carries `image:` and `pull_policy: always` with no `build:` stanza. A compose file with both would silently build locally and hide the fact that the registry copy is stale.
 
-Consequence to know: the GHCR package starts private even for a public repository. Either flip it to public once, or log in on the VPS with a `read:packages` token — both documented in `operations.md`.
+Consequence to know: this package is public, so the VPS pulls it without credentials. If you set it private, the VPS needs `docker login ghcr.io` with a `read:packages` token — documented in `operations.md`.
 
 ---
 
