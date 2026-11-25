@@ -16,7 +16,7 @@ Both commands are guild-only and require **Manage Messages**.
 **Behaviour**
 
 - Posts `message` `count` times.
-- `mention` appears on the **first message only**. A run never becomes a ping burst.
+- `mention` appears on **every message**, so a run at the default settings pings the target five times. Keep `count` low when the target is not in on the joke.
 - `interval` below 1.2 s is raised to 1.2 s and the acknowledgement says so.
 - `count` outside 1–10 is rejected, not clamped: asking for 50 is a mistake worth reporting.
 - Up to 2 runs may be active in one channel at a time.
