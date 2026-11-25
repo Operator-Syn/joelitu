@@ -202,6 +202,19 @@ What actually bounds a run is `MAX_COUNT`, the pacer's channel budget, the `Mana
 
 Timing state for mentions is gone with it, so the registry is back to one map and one counter.
 
+---
+
+## 2026-11-25 — `/cancel` is scoped to the caller's own runs
+
+The registry records `started_by` again, and `cancel_owned_in_channel` matches on both channel and caller. Previously `/cancel` stopped every run in the channel, which meant one member could kill another member's burst — including a member with `Manage Messages` stopping someone who had done nothing wrong.
+
+Hierarchy was considered and rejected: letting administrators cancel others would be defensible in a moderation tool, but this command posts messages on the caller's behalf, so the run is theirs. Anyone who needs a hostile run stopped has Discord's own moderation tools, which leave an audit trail; a slash command should not be a quieter version of the same power.
+
+`started_by` was removed once before as dead state. It is load-bearing now, which is why the field carries a doc comment explaining what would break without it.
+
+The acknowledgement text changed with the behaviour: "cancelling your 2 runs", and "you have no active run in this channel" when the caller owns none — which is no longer the same as "nothing is running here".
+
+
 
 
 
