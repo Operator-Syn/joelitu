@@ -1,0 +1,31 @@
+# One service, no database, no local build. The image comes from GHCR, published by
+# `.github/workflows/ci.yml` after fmt, clippy and the tests pass.
+#
+# Deploy: `docker compose pull && docker compose up -d`
+services:
+  joelitu:
+    image: ghcr.io/operator-syn/joelitu:latest
+
+    # Always take the registry's tag rather than a stale local copy of the same
+    # name, so `docker compose up -d` after a push deploys the new image.
+    pull_policy: always
+
+    container_name: joelitu
+
+    # Token and optional TEST_GUILD_ID live here, never in the image or the repo.
+    env_file:
+      - deploy/joelitu.env
+
+    # Crash and reboot recovery without a systemd unit: the daemon starts at boot
+    # and this policy brings the container back.
+    restart: unless-stopped
+
+    # Reap zombies properly, since the bot is PID 1 in its own container.
+    init: true
+
+    # Long enough for SIGTERM to reach the binary and cancel in-flight runs before
+    # Docker falls back to SIGKILL.
+    stop_grace_period: 20s
+
+    # No ports, no volumes: the bot makes outbound connections and writes only to
+    # stdout. Logs go to the Docker log driver.
