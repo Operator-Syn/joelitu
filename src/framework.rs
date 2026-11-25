@@ -10,7 +10,11 @@ use std::sync::Arc;
 use poise::serenity_prelude::{GuildId, Ready};
 
 use crate::{
-    commands, config::Config, data::Data, error::CommandError, spam::registry::RunRegistry,
+    commands,
+    config::Config,
+    data::Data,
+    error::CommandError,
+    spam::{pacer::Pacer, registry::RunRegistry},
 };
 
 /// Build the poise framework for this process.
@@ -21,6 +25,7 @@ use crate::{
 ///   during setup.
 /// * `runs` - The registry every command will share. Cloned `Arc`; the same
 ///   instance must also be held by `main` for shutdown handling.
+/// * `pacer` - The send budgets every run will share.
 ///
 /// # Returns
 ///
@@ -31,7 +36,11 @@ use crate::{
 ///
 /// Does not panic. A registration failure propagates out of setup, which the
 /// client treats as a fatal startup error.
-pub fn build(config: Arc<Config>, runs: Arc<RunRegistry>) -> poise::Framework<Data, CommandError> {
+pub fn build(
+    config: Arc<Config>,
+    runs: Arc<RunRegistry>,
+    pacer: Arc<Pacer>,
+) -> poise::Framework<Data, CommandError> {
     poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: vec![commands::spam::spam(), commands::cancel::cancel()],
@@ -42,6 +51,7 @@ pub fn build(config: Arc<Config>, runs: Arc<RunRegistry>) -> poise::Framework<Da
             // not the Data it is about to construct, so the parts are moved in.
             let config = config.clone();
             let runs = runs.clone();
+            let pacer = pacer.clone();
 
             Box::pin(async move {
                 let commands = &framework.options().commands;
@@ -58,7 +68,7 @@ pub fn build(config: Arc<Config>, runs: Arc<RunRegistry>) -> poise::Framework<Da
                     }
                 }
 
-                Ok(Data::new(runs))
+                Ok(Data::new(runs, pacer))
             })
         })
         .build()
