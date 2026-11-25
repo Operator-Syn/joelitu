@@ -1,0 +1,63 @@
+[package]
+name = "joelitu"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "A bounded message repeater for Discord"
+license = "MIT"
+publish = false
+
+[dependencies]
+# Gateway client and REST layer. Default features are heavy and pull in the
+# voice stack; the list below is everything the bot actually uses.
+serenity = { version = "0.12", default-features = false, features = [
+    "client",
+    "gateway",
+    "model",
+    "http",
+    "cache",
+    "rustls_backend",
+] }
+
+# Slash-command framework layered on serenity.
+poise = "0.6"
+
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "signal"] }
+tokio-util = { version = "0.7", default-features = false } # CancellationToken
+
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "fmt",
+    "env-filter",
+    "ansi",
+] }
+thiserror = "2"
+
+[dev-dependencies]
+# `test-util` enables `tokio::time::pause`, which the runner tests use to assert
+# pacing without waiting real seconds. It is a dev-only feature.
+tokio = { version = "1", features = [
+    "macros",
+    "rt-multi-thread",
+    "time",
+    "test-util",
+] }
+
+[profile.release]
+# Thin LTO parallelises across codegen units; fat LTO serialises a single LLVM
+# pass and buys nothing a mostly-idle bot can observe.
+lto = "thin"
+codegen-units = 16
+# Backtraces are the only diagnostic available after a container restart, so
+# line tables stay in. Do not add `strip = "symbols"`, and do not set
+# `panic = "abort"` — both destroy the trace you need.
+debug = "line-tables-only"
+incremental = false
+
+[lints.rust]
+missing_docs = "warn"
+
+[lints.clippy]
+missing_docs_in_private_items = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
