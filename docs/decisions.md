@@ -1,0 +1,127 @@
+# Decisions
+
+Dated entries, newest last. Each records **why**, never what the code does — the code and its rustdoc are the source of truth for behaviour. When a decision changes, the entry is superseded by a newer one, not edited.
+
+---
+
+## 2026-11-25 — Rust, serenity, poise
+
+Single binary, `serenity` 0.12 for gateway and REST, `poise` 0.6 for slash commands.
+
+Alternatives considered: `discord.js`/TypeScript (fastest to write, but the operator wanted Rust), Rust on Cloudflare Workers (works for slash-command-only bots, but timer-driven work needs Durable Objects and the Rust binding's alarm examples are thin), `twilight` (more modular, more assembly).
+
+Consequence: a long-lived process to supervise, which Docker handles with a restart policy.
+
+---
+
+## 2026-11-25 — No database
+
+Postgres was planned, then dropped.
+
+Reason: a run lasts at most ~12 seconds. Persistence would exist only to survive a restart mid-burst; the worst case without it is that the last few messages never arrive, silently. That does not justify a pool, migrations, a compose service, and a reconcile-on-startup path.
+
+Consequences, all accepted:
+
+- A restart drops in-flight runs. Documented in `operations.md` as behaviour.
+- `/cancel` reaches only runs in the serving process.
+- Adding a second process on the same guilds would need shared state reintroduced. The seam is the per-channel cap in `registry`; nothing is added speculatively now.
+
+---
+
+## 2026-11-25 — Limits are constants, not configuration
+
+`DEFAULT_COUNT = 5`, `MAX_COUNT = 10`, `MIN_INTERVAL = 1200 ms` live in `src/spam/plan.rs`.
+
+These are safety properties. An environment variable that can set the pacing floor to zero is a way to get the bot rate-limited or its application flagged, so config holds only what genuinely differs per deployment: the token and the optional test guild id.
+
+---
+
+## 2026-11-25 — The interval floor is clamped and disclosed
+
+A request below 1.2 s is raised to 1.2 s and the acknowledgement says so, rather than the command failing.
+
+A silent clamp would contradict "loud failure"; a hard rejection would make the command annoying for an obviously small mistake. Disclosing the adjustment is the middle that keeps the command usable and the user informed.
+
+Count, by contrast, is rejected when out of range: asking for 50 expresses an intent that clamping would quietly ignore.
+
+---
+
+## 2026-11-25 — Mention on the first message only, with `allowed_mentions` set explicitly
+
+The message body is arbitrary user input. If `allowed_mentions` were left unset, `@everyone` or a role mention typed into the body would ping on every message.
+
+Every send sets `allowed_mentions` explicitly — the single planned user, or empty. The rendering rule (mention on index 0 only) lives in `plan.rs`, so it is testable without Discord.
+
+---
+
+## 2026-11-25 — The runner does not touch the registry or the network
+
+`runner::drive` is pure control flow over a `Plan`, a `CancellationToken`, and an injected send closure.
+
+The alternative — letting the pacing loop own sends and registry bookkeeping — would make the one behaviour that needs deterministic tests depend on a live database and a live gateway, and would put terminal-state decisions in two places instead of one.
+
+---
+
+## 2026-11-25 — `sleep`, not `interval`
+
+`tokio::time::interval` fires its first tick immediately. Used naively for pacing, it sends messages one and two back to back on every run.
+
+`sleep` inside the loop has no such trap and needs no `MissedTickBehavior` reasoning. The final message is not followed by a sleep either, so a run never outlives its own pacing by one interval.
+
+---
+
+## 2026-11-25 — `RunGuard` instead of explicit release
+
+Every reservation must be released. A spawned task can return normally, return early, or unwind, and a chain of explicit releases covers only the first two.
+
+A destructor covers all three. This is why the registry exposes `RunGuard` rather than a public `release`.
+
+---
+
+## 2026-11-25 — Channel-scoped `/cancel`
+
+No run ids are exposed to users. Run ids are process-local and meaningless outside it, so `/cancel` operates on the channel the caller is in.
+
+Consequence: `/cancel` cannot stop another channel's run, and reports "no active run" for anything already finished, since completed runs are not retained.
+
+---
+
+## 2026-11-25 — Commands require Manage Messages
+
+Without a gate, any member of any guild the bot has joined could make it post ten messages at a time in any channel it can see.
+
+This is the one line in `commands/spam.rs` and `commands/cancel.rs` that is a deliberate policy choice rather than plumbing: `required_permissions = "MANAGE_MESSAGES"`. Deleting it makes both commands open to every member.
+
+---
+
+## 2026-11-25 — The image is built in CI and pulled from GHCR
+
+`ghcr.io/operator-syn/joelitu`, published by `.github/workflows/ci.yml`.
+
+Reason: the VPS should run a container, not compile one. A release build of the serenity dependency graph is several hundred crates and minutes of CPU; doing that on the box means carrying a Rust toolchain, a `~/.cargo` cache, and enough RAM headroom for eight rustc processes — all of it duplicated from the machine that already builds and tests the code.
+
+The image job `needs: check`, so a red test suite publishes nothing. Every build is tagged `latest`, the branch, the version (on `v*` tags), and the short commit sha; the sha tag is what makes a running container traceable to a diff.
+
+`compose.yaml` carries `image:` and `pull_policy: always` with no `build:` stanza. A compose file with both would silently build locally and hide the fact that the registry copy is stale.
+
+Consequence to know: the GHCR package starts private even for a public repository. Either flip it to public once, or log in on the VPS with a `read:packages` token — both documented in `operations.md`.
+
+---
+
+## 2026-11-25 — Docker, no systemd unit
+
+The Docker daemon starts at boot and `restart: unless-stopped` brings the container back after a crash or reboot.
+
+A systemd unit wrapping `docker compose up -d` would report the wrapper's health rather than the container's, and adds a layer that hides what the operator actually wants to inspect. If ordering ever matters, the unit is four lines with `After=docker.service` and `RemainAfterExit=yes`.
+
+`init: true` reaps zombies because the bot is PID 1. `stop_grace_period: 20s` gives SIGTERM time to cancel runs instead of being SIGKILLed mid-loop.
+
+---
+
+## 2026-11-25 — Slim glibc runtime, not musl or scratch
+
+The GNU target needs glibc, so the runtime image is `debian:bookworm-slim`.
+
+A musl static binary would allow `scratch` and a smaller image, at the cost of extra build tooling for the TLS stack. The payoff is a few megabytes on a VPS with disk to spare, so the simpler build wins.
+
+The release profile keeps `debug = "line-tables-only"` and `panic = "unwind"`, and does not strip symbols: a backtrace is the only diagnostic available after a container restart.
