@@ -46,7 +46,7 @@ The compiler cannot enforce this table; a reviewer does. The rule that makes it 
 
 - **Every reservation is released.** Enforced by `RunGuard`'s destructor, not by callers remembering.
 - **Pacing uses `sleep`, never `interval`.** `tokio::time::interval` fires its first tick immediately, which sends messages one and two back to back.
-- **`allowed_mentions` is always set explicitly.** Either the single planned user or empty. A literal `@everyone` typed into the message body must never ping.
+- **`allowed_mentions` is always set explicitly.** Either the single planned user or empty. A literal `@everyone` typed into the message body must never ping; the only ping in a run is the one the caller selected.
 - **One process.** The registry is the source of truth for active runs; two processes would each have their own.
 
 ## Shutdown
