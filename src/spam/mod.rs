@@ -89,14 +89,19 @@ pub fn prepare(
     // 2. Read-only cooldown check. Rounding up means a sub-second remainder is
     //    reported as 1 s rather than 0 s, which would read as "allowed" while the
     //    check just refused.
-    if let Some(user_id) = plan.mention_user_id()
-        && let Some(remaining) = data
+    //
+    //    Nested rather than a single `if let ... && let ...`: chained let expressions
+    //    are stable only from Rust 1.88, and this crate pins 1.85 in CI and in the
+    //    Dockerfile. A newer local compiler accepts them and the pipeline does not.
+    if let Some(user_id) = plan.mention_user_id() {
+        if let Some(remaining) = data
             .runs
             .mention_cooldown_remaining(channel_id.get(), user_id)
-    {
-        return Err(CommandError::MentionCooldown {
-            remaining_secs: remaining.as_secs().max(1),
-        });
+        {
+            return Err(CommandError::MentionCooldown {
+                remaining_secs: remaining.as_secs().max(1),
+            });
+        }
     }
 
     // 3. Reservation is the only shared-state mutation here, and it is atomic
