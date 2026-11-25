@@ -66,13 +66,18 @@ impl PreparedRun {
 ///
 /// * Any [`crate::error::PlanError`], surfaced as [`CommandError::Plan`], when
 ///   the request does not validate.
+/// * [`CommandError::MentionCooldown`] when the plan mentions a user who was
+///   already mentioned in this channel within the cooldown window.
 /// * [`CommandError::ChannelBusy`] when the channel already holds the maximum
 ///   number of runs. The slot is not reserved in that case.
 ///
 /// # Processing
 ///
 /// 1. Validate before reserving, so a rejected request never occupies a slot.
-/// 2. Reserve; on refusal report the channel's current occupancy.
+/// 2. Reject a mention still on cooldown, before reserving for the same reason.
+/// 3. Reserve; on refusal report the channel's current occupancy.
+/// 4. Record the mention only once the slot is held, so a refused run cannot put
+///    a user on cooldown for messages that were never sent.
 pub fn prepare(
     data: &Data,
     channel_id: ChannelId,
@@ -81,7 +86,20 @@ pub fn prepare(
     // 1. Pure validation first: a bad request must not consume capacity.
     let plan = Plan::validate(raw)?;
 
-    // 2. Reservation is the only shared-state mutation here, and it is atomic
+    // 2. Read-only cooldown check. Rounding up means a sub-second remainder is
+    //    reported as 1 s rather than 0 s, which would read as "allowed" while the
+    //    check just refused.
+    if let Some(user_id) = plan.mention_user_id()
+        && let Some(remaining) = data
+            .runs
+            .mention_cooldown_remaining(channel_id.get(), user_id)
+    {
+        return Err(CommandError::MentionCooldown {
+            remaining_secs: remaining.as_secs().max(1),
+        });
+    }
+
+    // 3. Reservation is the only shared-state mutation here, and it is atomic
     //    inside the registry, so two simultaneous commands cannot both observe a
     //    free slot.
     let (id, token) = data
@@ -90,6 +108,11 @@ pub fn prepare(
         .ok_or(CommandError::ChannelBusy {
             active: data.runs.active_in_channel(channel_id.get()),
         })?;
+
+    // 4. Only now does the mention count against the cooldown.
+    if let Some(user_id) = plan.mention_user_id() {
+        data.runs.record_mention(channel_id.get(), user_id);
+    }
 
     Ok(PreparedRun { id, token, plan })
 }
